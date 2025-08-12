@@ -1,4 +1,5 @@
-name: Build and Push Docker Image
+name: Build, Push, and Deploy Scraper
+
 on:
   push:
     branches:
@@ -17,11 +18,11 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-      - name: Build and Push Docker Hub Image
+      - name: Build and Push Docker Image
         run: |
-          docker build -t alphadapta/scrap2018papart2:latest .          
+          docker build -t alphadapta/scrap2018papart2:latest .
           docker push alphadapta/scrap2018papart2:latest
-  
+
   deploy-to-crime-analyst-server:
     needs: build-and-push-to-docker-hub
     runs-on: ubuntu-latest
@@ -39,6 +40,12 @@ jobs:
           username: ${{ secrets.DROPLET_SSH_USERNAME }}
           password: ${{ secrets.DROPLET_SSH_PASSWORD }}
           script: |
-            docker pull alphadapta/scrap2018papart2:latest                 
-            sh -c 'if docker ps -a -q --filter "name=continerscrap2018papart2" -n 1 | grep -q .; then docker stop continerscrap2018papart2 && docker rm continerscrap2018papart2; fi'                    
-            docker run --name continerscrap2018papart2 -p 8032:8032 -d alphadapta/scrap2018papart2:latest
+            docker pull alphadapta/scrap2018papart2:latest
+            if [ "$(docker ps -aq -f name=continerscrap2018papart2)" ]; then
+              docker stop continerscrap2018papart2 || true
+              docker rm continerscrap2018papart2 || true
+            fi
+            docker run --name continerscrap2018papart2 \
+              -v /root/download_directory:/app/volume_downloaded_pdf \
+              -v /root/csv_directory:/app/csv \
+              -d alphadapta/scrap2018papart2:latest
