@@ -1,3 +1,4 @@
+
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -26,7 +27,11 @@ user_agents = [
 ]
 
 session = requests.Session()
-session.headers.update({'User-Agent': random.choice(user_agents)})
+session.headers.update({
+    'User-Agent': random.choice(user_agents),
+    'Accept-Language': 'id,en-US;q=0.9,en;q=0.8',
+    'Referer': 'https://putusan3.mahkamahagung.go.id/'
+})
 
 os.makedirs('csv', exist_ok=True)
 
@@ -42,10 +47,10 @@ def get_pdf_link(soup):
 # PARAMETER SCRAPING
 # =========================
 year = '2018'
-category = 'regis'
+category = 'putus'
 direktori = 'perdata-agama'
-list_pengadilan = ['pa-surabaya', 'pa-indramayu']
-output_file = f'csv/putusan_{category}_{year}_part2.csv'
+list_pengadilan = ['pa-sumber', 'pa-banyuwangi', 'pa-tigaraksa', 'pa-cilacap', 'pa-cibinong', 'pa-cianjur', 'pa-jakarta-timur']
+output_file = f'csv/putusan_{category}_{year}_part2.1.csv'
 
 # =========================
 # SCRAPING (Hanya jika CSV belum ada)
@@ -71,11 +76,15 @@ if not os.path.exists(output_file):
 
                 if r.status_code != 200:
                     error_count += 1
+                    print(f"[{current_time()}] ⚠️ Error {r.status_code} (error ke-{error_count}/{max_errors})")
                     if error_count >= max_errors:
+                        print(f"[{current_time()}] ⛔ Stop scraping {pengadilan}, terlalu banyak error.")
                         break
                     time.sleep(random.uniform(5, 10))
                     continue
 
+                # reset error jika berhasil
+                error_count = 0
                 soup = BeautifulSoup(r.text, 'html.parser')
                 items = soup.select('.entry-c strong a')
 
@@ -89,12 +98,13 @@ if not os.path.exists(output_file):
                     break
 
                 page += 1
-                error_count = 0
                 time.sleep(random.uniform(2, 4))
 
-            except Exception:
+            except Exception as e:
                 error_count += 1
+                print(f"[{current_time()}] ❌ Exception: {e} (error ke-{error_count}/{max_errors})")
                 if error_count >= max_errors:
+                    print(f"[{current_time()}] ⛔ Stop scraping {pengadilan}, terlalu banyak error.")
                     break
                 time.sleep(random.uniform(5, 10))
                 continue
@@ -106,13 +116,18 @@ if not os.path.exists(output_file):
                 print(f"[{current_time()}] [{idx+1}/{len(links_putusan)}] Detail: {link}")
                 session.headers.update({'User-Agent': random.choice(user_agents)})
                 r = session.get(link, timeout=600)
+
                 if r.status_code != 200:
                     error_count += 1
+                    print(f"[{current_time()}] ⚠️ Detail Error {r.status_code} (error ke-{error_count}/{max_errors})")
                     if error_count >= max_errors:
+                        print(f"[{current_time()}] ⛔ Stop detail scraping {pengadilan}, terlalu banyak error.")
                         break
                     time.sleep(random.uniform(5, 10))
                     continue
 
+                # reset error jika berhasil
+                error_count = 0
                 soup = BeautifulSoup(r.text, 'html.parser')
                 data = {
                     "url_page": link,
@@ -128,7 +143,13 @@ if not os.path.exists(output_file):
                 }
                 all_combined_data.append(data)
                 time.sleep(random.uniform(2.5, 5))
-            except Exception:
+
+            except Exception as e:
+                error_count += 1
+                print(f"[{current_time()}] ❌ Detail Exception: {e} (error ke-{error_count}/{max_errors})")
+                if error_count >= max_errors:
+                    print(f"[{current_time()}] ⛔ Stop detail scraping {pengadilan}, terlalu banyak error.")
+                    break
                 continue
 
     df = pd.DataFrame(all_combined_data)
@@ -141,8 +162,13 @@ else:
 # =========================
 # DOWNLOAD PDF (Multi-thread + Resume)
 # =========================
-download_directory = 'volume_downloaded_pdf/perdata_agama/regis'
+download_directory = 'volume_downloaded_pdf/perdata_agama/putus'
 os.makedirs(download_directory, exist_ok=True)
+
+# Buat folder logs
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"log_download_{datetime.now(tz_wib).strftime('%Y%m%d_%H%M%S')}.txt")
 
 df['nomor_asli'] = df['nomor']
 df['nomor'] = df['nomor'].str.replace('/', '_', regex=False).str.replace('.', '~', regex=False)
@@ -161,7 +187,12 @@ def create_session():
     s.mount("https://", adapter)
     return s
 
+# Counter error global
+max_errors = 100
+error_count = 0
+
 def download_pdf(row):
+    global error_count
     pdf_url = row['pdf_link']
     nomor_asli = row['nomor_asli']
     nomor = row['nomor']
@@ -176,19 +207,71 @@ def download_pdf(row):
     try:
         sess = create_session()
         resp = sess.get(pdf_url, timeout=3600)
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            error_count += 1
+            msg = f"[FAILED] HTTP {resp.status_code} | {pdf_url} | Nomor: {nomor_asli} | Error ke-{error_count}/{max_errors}"
+            if error_count >= max_errors:
+                msg += " ⛔ (terlalu banyak error, cek koneksi/server)"
+            return msg
+
         with open(pdf_filename, 'wb') as f:
             f.write(resp.content)
+
+        # Reset error count kalau berhasil
+        error_count = 0
         return f"[OK] {pdf_filename} | Nomor: {nomor_asli}"
+
     except Exception as e:
-        return f"[FAILED] {pdf_url} | Nomor: {nomor_asli} | Error: {e}"
+        error_count += 1
+        msg = f"[FAILED] {pdf_url} | Nomor: {nomor_asli} | Error: {e} | Error ke-{error_count}/{max_errors}"
+        if error_count >= max_errors:
+            msg += " ⛔ (terlalu banyak error, cek koneksi/server)"
+        return msg
     finally:
         gc.collect()
 
 print(f"[{current_time()}] 🚀 Mulai download PDF secara paralel...")
+
+results = []
 with ThreadPoolExecutor(max_workers=15) as executor:
     futures = [executor.submit(download_pdf, row) for _, row in df.iterrows()]
     for i, future in enumerate(as_completed(futures), 1):
-        print(f"{i}/{len(df)}", future.result())
+        result = future.result()
+        results.append(result)
+        print(f"{i}/{len(df)}", result)
 
-print(f"[{current_time()}] ✅ Semua PDF selesai di-download.")
+# =========================
+# RINGKASAN HASIL
+# =========================
+ok_count = sum(1 for r in results if r.startswith("[OK]"))
+failed_count = sum(1 for r in results if r.startswith("[FAILED]"))
+skip_count = sum(1 for r in results if r.startswith("[SKIP]"))
+
+summary = (
+    f"\n[{current_time()}] 📊 Ringkasan Download:\n"
+    f"   ✅ Berhasil : {ok_count}\n"
+    f"   ❌ Gagal    : {failed_count}\n"
+    f"   ⏭️ Skip     : {skip_count}\n"
+    f"   📂 Total    : {len(results)}\n\n"
+    f"[{current_time()}] ✅ Semua PDF selesai di-download.\n"
+)
+
+print(summary)
+
+# =========================
+# SIMPAN LOG KE FILE
+# =========================
+# simpan log di dalam folder csv/logs/
+log_dir = os.path.join("csv", "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_file = os.path.join(log_dir, f"log_download_{datetime.now(tz_wib).strftime('%Y%m%d_%H%M%S')}.txt")
+
+with open(log_file, "w", encoding="utf-8") as f:
+    f.write("=== LOG DOWNLOAD PDF ===\n")
+    f.write(f"Mulai: {current_time()}\n")
+    f.write(f"Total target file: {len(df)}\n\n")
+    for res in results:
+        f.write(res + "\n")
+    f.write(summary)
+
+print(f"[{current_time()}] 📝 Log tersimpan di: {log_file}")
