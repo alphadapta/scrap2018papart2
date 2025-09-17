@@ -47,10 +47,10 @@ def get_pdf_link(soup):
 # PARAMETER SCRAPING
 # =========================
 year = '2018'
-category = 'putus'
+category = 'regis'
 direktori = 'perdata-agama'
-list_pengadilan = ['pa-sumber', 'pa-banyuwangi', 'pa-tigaraksa', 'pa-cilacap', 'pa-cibinong', 'pa-cianjur', 'pa-jakarta-timur']
-output_file = f'csv/putusan_{category}_{year}_part2.1.csv'
+list_pengadilan = ['pa-karawang', 'pa-blitar', 'pa-sumedang', 'pa-tasikmalaya', 'pa-pemalang', 'pa-slawi', 'pa-kabupaten-kediri', 'pa-watampone', 'pa-lumajang', 'pa-kebumen', 'pa-jakarta-barat', 'pa-semarang']
+output_file = f'csv/putusan_{category}_{year}_part2.csv'
 
 # =========================
 # SCRAPING (Hanya jika CSV belum ada)
@@ -162,7 +162,7 @@ else:
 # =========================
 # DOWNLOAD PDF (Multi-thread + Resume)
 # =========================
-download_directory = 'volume_downloaded_pdf/perdata_agama/putus'
+download_directory = 'volume_downloaded_pdf/perdata_agama/regis'
 os.makedirs(download_directory, exist_ok=True)
 
 # Buat folder logs
